@@ -1,65 +1,233 @@
-import Image from "next/image";
+import Link from "next/link";
+import {
+  CalendarClock,
+  Flag as FlagIcon,
+  Goal,
+  MapPin,
+  Trophy,
+  Users,
+} from "lucide-react";
+import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/session";
+import { buttonVariants } from "@/components/ui/button";
+import { Countdown } from "@/components/countdown";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Flag } from "@/components/flag";
+import { SoccerBall } from "@/components/brand";
+import { Bunting } from "@/components/bunting";
 
-export default function Home() {
+export default async function HomePage() {
+  const [user, firstMatch, counts] = await Promise.all([
+    getCurrentUser(),
+    prisma.match.findFirst({
+      orderBy: { date: "asc" },
+      include: { homeTeam: true, awayTeam: true },
+    }),
+    getCounts(),
+  ]);
+
+  const siteUrl =
+    process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ??
+    "http://localhost:3000";
+
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebSite",
+        "@id": `${siteUrl}/#website`,
+        url: siteUrl,
+        name: "Polla Mundial 2026",
+        inLanguage: "es",
+        description:
+          "Polla del Mundial de Fútbol 2026: predice marcadores, arma tu bracket y compite con tus amigos.",
+      },
+      {
+        "@type": "SportsEvent",
+        name: "Copa Mundial de la FIFA 2026",
+        startDate: "2026-06-11",
+        endDate: "2026-07-19",
+        sport: "Fútbol",
+        eventStatus: "https://schema.org/EventScheduled",
+        eventAttendanceMode:
+          "https://schema.org/OfflineEventAttendanceMode",
+        location: [
+          { "@type": "Country", name: "Estados Unidos" },
+          { "@type": "Country", name: "Canadá" },
+          { "@type": "Country", name: "México" },
+        ],
+        organizer: {
+          "@type": "Organization",
+          name: "FIFA",
+          url: "https://www.fifa.com",
+        },
+      },
+    ],
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <main className="flex-1">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+      <Bunting className="mx-auto max-w-6xl px-2 pt-3" />
+      <section className="relative overflow-hidden">
+        <div className="absolute inset-0 -z-10 bg-dots opacity-60" />
+        <div className="absolute inset-0 -z-10 bg-gradient-to-b from-transparent via-transparent to-background" />
+        <div className="mx-auto max-w-6xl px-4 py-14 sm:py-20">
+          <div className="mx-auto max-w-3xl space-y-6 text-center">
+            <div className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-card/70 px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground backdrop-blur">
+              <FlagIcon className="size-3.5 text-primary" />
+              <span>USA · Canadá · México</span>
+            </div>
+
+            <h1 className="font-display text-5xl font-bold leading-[1.02] tracking-tight sm:text-7xl">
+              Polla <span className="text-primary">Mundial</span>
+              <br />
+              2026
+            </h1>
+
+            <p className="text-lg text-muted-foreground sm:text-xl">
+              Predice los {counts.matches} partidos, arma tu bracket y pelea por
+              el trofeo con tus amigos.
+            </p>
+
+            <div className="flex flex-wrap justify-center gap-3 pt-2">
+              {user ? (
+                <>
+                  <Link
+                    href="/predictions"
+                    className={buttonVariants({ size: "lg" }) + " gap-2"}
+                  >
+                    <Goal className="size-4" /> Mis predicciones
+                  </Link>
+                  <Link
+                    href="/predictions/bracket"
+                    className={
+                      buttonVariants({ size: "lg", variant: "outline" }) +
+                      " gap-2"
+                    }
+                  >
+                    <Trophy className="size-4" /> Ver bracket
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <Link
+                    href="/register"
+                    className={buttonVariants({ size: "lg" }) + " gap-2"}
+                  >
+                    <SoccerBall className="size-4" /> Empezar ahora
+                  </Link>
+                  <Link
+                    href="/login"
+                    className={buttonVariants({ size: "lg", variant: "outline" })}
+                  >
+                    Ya tengo cuenta
+                  </Link>
+                </>
+              )}
+            </div>
+          </div>
+
+          {firstMatch && (
+            <div className="mx-auto mt-14 max-w-2xl">
+              <Card className="relative overflow-hidden border-primary/20 bg-card/70 backdrop-blur">
+                <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/60 to-transparent" />
+                <CardHeader className="pb-2 text-center">
+                  <div className="flex items-center justify-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                    <CalendarClock className="size-3.5" />
+                    El Mundial arranca en
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <Countdown
+                    targetIso={firstMatch.date.toISOString()}
+                    label="El primer partido"
+                  />
+                  <div className="flex items-center justify-center gap-4 text-sm">
+                    <TeamBadge
+                      code={firstMatch.homeTeam?.code}
+                      name={firstMatch.homeTeam?.nameEs}
+                    />
+                    <span className="font-display text-xl text-muted-foreground">
+                      vs
+                    </span>
+                    <TeamBadge
+                      code={firstMatch.awayTeam?.code}
+                      name={firstMatch.awayTeam?.nameEs}
+                    />
+                  </div>
+                  <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+                    <MapPin className="size-3" />
+                    {firstMatch.venue}, {firstMatch.city}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          <div className="mx-auto mt-14 grid max-w-4xl grid-cols-2 gap-3 sm:grid-cols-4">
+            <Stat icon={<Users className="size-4" />} value={counts.users} label={counts.users === 1 ? "Participante" : "Participantes"} />
+            <Stat icon={<FlagIcon className="size-4" />} value={counts.teams} label="Equipos" />
+            <Stat icon={<Goal className="size-4" />} value={counts.matches} label="Partidos" />
+            <Stat icon={<Trophy className="size-4" />} value={counts.groups} label="Grupos" />
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      </section>
+    </main>
+  );
+}
+
+function TeamBadge({
+  code,
+  name,
+}: {
+  code: string | null | undefined;
+  name: string | null | undefined;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <Flag code={code} size="md" />
+      <div className="text-left">
+        <div className="font-display text-base font-semibold leading-tight">
+          {code ?? "—"}
         </div>
-      </main>
+        <div className="text-[11px] text-muted-foreground">{name ?? "—"}</div>
+      </div>
     </div>
   );
+}
+
+function Stat({
+  icon,
+  value,
+  label,
+}: {
+  icon: React.ReactNode;
+  value: number;
+  label: string;
+}) {
+  return (
+    <div className="rounded-lg border border-border/60 bg-card/70 p-4 backdrop-blur">
+      <div className="flex items-center gap-2 text-muted-foreground">
+        {icon}
+        <span className="text-[10px] uppercase tracking-[0.18em]">{label}</span>
+      </div>
+      <div className="mt-2 font-display text-3xl font-bold tabular-nums">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+async function getCounts() {
+  const [teams, groups, matches, users] = await Promise.all([
+    prisma.team.count(),
+    prisma.group.count(),
+    prisma.match.count(),
+    prisma.user.count(),
+  ]);
+  return { teams, groups, matches, users };
 }
