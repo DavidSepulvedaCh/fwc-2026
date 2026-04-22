@@ -27,8 +27,8 @@ const siteUrl =
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: "Test - Demmo",
-    /* default: "Polla Mundial 2026 · Predice el Mundial de Fútbol", */
+    // default: "Test - Demmo",
+    default: "Polla Mundial 2026 · Predice el Mundial de Fútbol",
     template: "%s · Polla Mundial 2026",
   },
   description:
