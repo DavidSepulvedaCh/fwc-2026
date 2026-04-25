@@ -1,8 +1,16 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useState } from "react";
+import {
+  useActionState,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "sonner";
-import { Lock, Medal, Save, Swords, Trophy } from "lucide-react";
+import { Download, Image as ImageIcon, Lock, Medal, Save, Swords, Trophy } from "lucide-react";
 import { BallSpinner } from "@/components/brand";
 import { fireConfetti } from "@/lib/confetti";
 import {
@@ -54,7 +62,7 @@ const STAGE_LABEL: Record<Stage, string> = {
 };
 
 // Bracket layout: match numbers per side & round, top-to-bottom.
-// Derived from the official FIFA 2026 bracket structure.
+// Pair semantics: LEFT.R16[i] is fed by LEFT.R32[2i] and LEFT.R32[2i+1].
 const LEFT = {
   R32: [74, 77, 73, 75, 83, 84, 81, 82],
   R16: [89, 90, 93, 94],
@@ -67,6 +75,7 @@ const RIGHT = {
   QF: [99, 100],
   SF: [102],
 };
+const FINAL_NUM = 104;
 
 const INITIAL_FORM_STATE: SavePredictionsState = {};
 
@@ -83,7 +92,6 @@ export function BracketForm({
 }) {
   const teamById = useMemo(() => new Map(teams.map((t) => [t.id, t])), [teams]);
 
-  // One field-state entry per match, driven by the user's live inputs.
   const [fields, setFields] = useState<Record<number, FieldState>>(() => {
     const init: Record<number, FieldState> = {};
     for (const r of rows) {
@@ -96,13 +104,15 @@ export function BracketForm({
     return init;
   });
 
-  const updateField = (id: number, key: keyof FieldState, value: string) =>
-    setFields((prev) => ({
-      ...prev,
-      [id]: { ...prev[id], [key]: value },
-    }));
+  const updateField = useCallback(
+    (id: number, key: keyof FieldState, value: string) =>
+      setFields((prev) => ({
+        ...prev,
+        [id]: { ...prev[id], [key]: value },
+      })),
+    [],
+  );
 
-  // Recompute bracket resolutions every time the user changes a value.
   const resolutions = useMemo(() => {
     const toNum = (s: string): number | null =>
       s === "" || s === null ? null : Number(s);
@@ -146,27 +156,106 @@ export function BracketForm({
     () => new Map(rows.map((r) => [r.matchNumber, r])),
     [rows],
   );
-  const pick = (ns: number[]) =>
-    ns.map((n) => rowByNumber.get(n)).filter(Boolean) as BracketRow[];
-  const final = rows.find((r) => r.stage === "FINAL");
-  const thirdPlace = rows.find((r) => r.stage === "TP");
+  const teamsFor = useCallback(
+    (row: BracketRow) => {
+      const r = resolvedById.get(row.id);
+      return {
+        home: r?.homeTeamId ? teamById.get(r.homeTeamId) ?? null : null,
+        away: r?.awayTeamId ? teamById.get(r.awayTeamId) ?? null : null,
+      };
+    },
+    [resolvedById, teamById],
+  );
 
-  // Helper used by each card to resolve the "live" home/away teams.
-  const teamsFor = (row: BracketRow) => {
-    const r = resolvedById.get(row.id);
-    return {
-      home: r?.homeTeamId ? teamById.get(r.homeTeamId) ?? null : null,
-      away: r?.awayTeamId ? teamById.get(r.awayTeamId) ?? null : null,
-    };
+  const cardProps = useCallback(
+    (row: BracketRow): CardProps => ({
+      row,
+      field: fields[row.id] ?? { home: "", away: "", winner: "" },
+      live: teamsFor(row),
+      onChange: updateField,
+      prefs,
+    }),
+    [fields, teamsFor, updateField, prefs],
+  );
+
+  // --- Export-as-image ---
+  const bracketSnapshotRef = useRef<HTMLDivElement>(null);
+  const [exporting, setExporting] = useState(false);
+
+  const champion = useMemo(() => {
+    const final = rowByNumber.get(FINAL_NUM);
+    if (!final) return null;
+    const f = fields[final.id];
+    if (!f) return null;
+    const h = f.home === "" ? null : Number(f.home);
+    const a = f.away === "" ? null : Number(f.away);
+    const live = teamsFor(final);
+    if (!live.home || !live.away || h === null || a === null) return null;
+    if (h > a) return live.home;
+    if (h < a) return live.away;
+    const w = f.winner === "" ? null : Number(f.winner);
+    if (w === live.home.id) return live.home;
+    if (w === live.away.id) return live.away;
+    return null;
+  }, [fields, rowByNumber, teamsFor]);
+
+  const handleExport = async (mode: "share" | "download") => {
+    const node = bracketSnapshotRef.current;
+    if (!node) return;
+    setExporting(true);
+    try {
+      const { toPng } = await import("html-to-image");
+      const dataUrl = await toPng(node, {
+        cacheBust: true,
+        pixelRatio: 2,
+        backgroundColor: getComputedStyle(document.documentElement)
+          .getPropertyValue("--background")
+          .trim() || "#0a0a0a",
+        filter: (el) => {
+          // Skip inputs' native UI chrome by keeping values visible
+          return !(el as HTMLElement)?.dataset?.noExport;
+        },
+      });
+
+      const fileName = `mi-bracket-mundial-2026${champion ? `-${champion.code}` : ""}.png`;
+
+      if (mode === "share") {
+        // Try Web Share API with file
+        try {
+          const blob = await (await fetch(dataUrl)).blob();
+          const file = new File([blob], fileName, { type: "image/png" });
+          const nav = navigator as Navigator & {
+            canShare?: (data: { files: File[] }) => boolean;
+            share: (data: { files?: File[]; title?: string; text?: string }) => Promise<void>;
+          };
+          if (nav.canShare?.({ files: [file] })) {
+            await nav.share({
+              files: [file],
+              title: "Mi bracket Mundial 2026",
+              text: champion
+                ? `Mi apuesta: ${champion.nameEs} campeón del Mundial 2026 🏆`
+                : "Mira mi bracket del Mundial 2026",
+            });
+            return;
+          }
+        } catch {
+          // user cancelled or unsupported — fallback to download
+        }
+      }
+
+      // Fallback: trigger a download
+      const link = document.createElement("a");
+      link.download = fileName;
+      link.href = dataUrl;
+      link.click();
+      toast.success("Imagen descargada");
+    } catch (err) {
+      console.error(err);
+      toast.error("No pudimos generar la imagen");
+    } finally {
+      setExporting(false);
+    }
   };
-
-  const cardProps = (row: BracketRow) => ({
-    row,
-    field: fields[row.id] ?? { home: "", away: "", winner: "" },
-    live: teamsFor(row),
-    onChange: updateField,
-    prefs,
-  });
 
   return (
     <form action={formAction} className="space-y-6">
@@ -176,27 +265,126 @@ export function BracketForm({
         </Alert>
       )}
 
-      <div className="overflow-x-auto rounded-2xl border border-border/60 bg-card/40 p-4 backdrop-blur sm:p-6">
-        <div className="grid min-w-[1200px] grid-cols-[220px_220px_220px_220px_280px_220px_220px_220px_220px] gap-4">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={exporting}
+          onClick={() => handleExport("share")}
+          className="gap-1.5"
+        >
+          {exporting ? <BallSpinner className="size-3.5" /> : <ImageIcon className="size-3.5" />}
+          Compartir imagen
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={exporting}
+          onClick={() => handleExport("download")}
+          className="gap-1.5"
+        >
+          <Download className="size-3.5" />
+          Descargar PNG
+        </Button>
+      </div>
+
+      <div ref={bracketSnapshotRef} className="rounded-2xl bg-background">
+        {/* Desktop bracket with connectors */}
+        <DesktopBracket
+          rows={rows}
+          cardProps={cardProps}
+          rowByNumber={rowByNumber}
+          champion={champion}
+        />
+
+        {/* Mobile bracket: stacked per-stage */}
+        <MobileBracket
+          cardProps={cardProps}
+          rowByNumber={rowByNumber}
+          champion={champion}
+        />
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-lg border border-border/60 bg-card/60 p-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-xs text-muted-foreground">
+          Al escribir un marcador el ganador avanza al siguiente cruce. Guarda cuando termines.
+        </p>
+        <Button type="submit" disabled={pending} className="gap-1.5">
+          {pending ? (
+            <BallSpinner className="size-3.5" />
+          ) : (
+            <Save className="size-3.5" />
+          )}
+          {pending ? "Guardando..." : "Guardar bracket"}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+// ============================================================
+// DESKTOP LAYOUT + CONNECTORS
+// ============================================================
+
+function DesktopBracket({
+  rows,
+  cardProps,
+  rowByNumber,
+  champion,
+}: {
+  rows: BracketRow[];
+  cardProps: (row: BracketRow) => CardProps;
+  rowByNumber: Map<number, BracketRow>;
+  champion: TeamLite | null;
+}) {
+  const pick = useCallback(
+    (ns: number[]) => ns.map((n) => rowByNumber.get(n)).filter(Boolean) as BracketRow[],
+    [rowByNumber],
+  );
+
+  const final = rows.find((r) => r.stage === "FINAL");
+  const thirdPlace = rows.find((r) => r.stage === "TP");
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  // Callback refs keyed by match number.
+  const cardRefs = useRef<Map<number, HTMLElement>>(new Map());
+  const setCardRef = useCallback(
+    (matchNumber: number) => (el: HTMLElement | null) => {
+      if (el) cardRefs.current.set(matchNumber, el);
+      else cardRefs.current.delete(matchNumber);
+    },
+    [],
+  );
+
+  return (
+    <div className="relative hidden lg:block">
+      <div ref={containerRef} className="relative overflow-x-auto rounded-2xl border border-border/60 bg-card/40 p-6 backdrop-blur">
+        <div className="relative grid min-w-[1200px] grid-cols-[210px_210px_210px_210px_260px_210px_210px_210px_210px] gap-4">
           <BracketColumn
             side="left"
             title={STAGE_LABEL.R32}
             items={pick(LEFT.R32).map(cardProps)}
+            setCardRef={setCardRef}
           />
           <BracketColumn
             side="left"
             title={STAGE_LABEL.R16}
             items={pick(LEFT.R16).map(cardProps)}
+            setCardRef={setCardRef}
           />
           <BracketColumn
             side="left"
             title={STAGE_LABEL.QF}
             items={pick(LEFT.QF).map(cardProps)}
+            setCardRef={setCardRef}
           />
           <BracketColumn
             side="left"
             title={STAGE_LABEL.SF}
             items={pick(LEFT.SF).map(cardProps)}
+            setCardRef={setCardRef}
           />
 
           <div className="flex flex-col items-center justify-center gap-6">
@@ -205,8 +393,12 @@ export function BracketForm({
                 <Trophy className="size-3.5" />
                 <span>Final</span>
               </div>
-              {final && <MatchCard {...cardProps(final)} variant="final" />}
-              {final && <ChampionBanner row={final} live={teamsFor(final)} field={fields[final.id] ?? { home: "", away: "", winner: "" }} />}
+              {final && (
+                <div ref={setCardRef(final.matchNumber)} className="w-full">
+                  <MatchCard {...cardProps(final)} variant="final" />
+                </div>
+              )}
+              {champion && <ChampionBanner champion={champion} />}
             </div>
 
             {thirdPlace && (
@@ -224,58 +416,44 @@ export function BracketForm({
             side="right"
             title={STAGE_LABEL.SF}
             items={pick(RIGHT.SF).map(cardProps)}
+            setCardRef={setCardRef}
           />
           <BracketColumn
             side="right"
             title={STAGE_LABEL.QF}
             items={pick(RIGHT.QF).map(cardProps)}
+            setCardRef={setCardRef}
           />
           <BracketColumn
             side="right"
             title={STAGE_LABEL.R16}
             items={pick(RIGHT.R16).map(cardProps)}
+            setCardRef={setCardRef}
           />
           <BracketColumn
             side="right"
             title={STAGE_LABEL.R32}
             items={pick(RIGHT.R32).map(cardProps)}
+            setCardRef={setCardRef}
           />
+
+          <ConnectorOverlay containerRef={containerRef} cardRefs={cardRefs} />
         </div>
       </div>
-
-      <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-card/60 p-3">
-        <p className="text-xs text-muted-foreground">
-          Al escribir un marcador el ganador avanza al siguiente cruce. Guarda cuando termines.
-        </p>
-        <Button type="submit" disabled={pending} className="gap-1.5">
-          {pending ? (
-            <BallSpinner className="size-3.5" />
-          ) : (
-            <Save className="size-3.5" />
-          )}
-          {pending ? "Guardando..." : "Guardar bracket"}
-        </Button>
-      </div>
-    </form>
+    </div>
   );
 }
-
-type CardProps = {
-  row: BracketRow;
-  field: FieldState;
-  live: { home: TeamLite | null; away: TeamLite | null };
-  onChange: (id: number, key: keyof FieldState, value: string) => void;
-  prefs: DatePrefs;
-};
 
 function BracketColumn({
   side,
   title,
   items,
+  setCardRef,
 }: {
   side: "left" | "right";
   title: string;
   items: CardProps[];
+  setCardRef: (n: number) => (el: HTMLElement | null) => void;
 }) {
   return (
     <div className="flex flex-col">
@@ -291,7 +469,7 @@ function BracketColumn({
       </div>
       <ul className="flex flex-1 flex-col justify-around gap-3">
         {items.map((c) => (
-          <li key={c.row.id}>
+          <li key={c.row.id} ref={setCardRef(c.row.matchNumber)}>
             <MatchCard {...c} side={side} />
           </li>
         ))}
@@ -299,6 +477,316 @@ function BracketColumn({
     </div>
   );
 }
+
+// Build the list of parent→children connections for the bracket tree.
+// Pair semantics: children[2i], children[2i+1] → parent[i].
+function buildConnections(): Array<{ parent: number; childA: number; childB: number }> {
+  const out: Array<{ parent: number; childA: number; childB: number }> = [];
+  const chain = (arr: number[], parents: number[]) => {
+    for (let i = 0; i < parents.length; i++) {
+      out.push({ parent: parents[i], childA: arr[2 * i], childB: arr[2 * i + 1] });
+    }
+  };
+  chain(LEFT.R32, LEFT.R16);
+  chain(LEFT.R16, LEFT.QF);
+  chain(LEFT.QF, LEFT.SF);
+  chain(RIGHT.R32, RIGHT.R16);
+  chain(RIGHT.R16, RIGHT.QF);
+  chain(RIGHT.QF, RIGHT.SF);
+  // Final is fed by both SFs
+  out.push({ parent: FINAL_NUM, childA: LEFT.SF[0], childB: RIGHT.SF[0] });
+  return out;
+}
+
+function ConnectorOverlay({
+  containerRef,
+  cardRefs,
+}: {
+  containerRef: React.RefObject<HTMLDivElement | null>;
+  cardRefs: React.RefObject<Map<number, HTMLElement>>;
+}) {
+  const [paths, setPaths] = useState<string[]>([]);
+  const [size, setSize] = useState({ w: 0, h: 0 });
+
+  const recompute = () => {
+    const container = containerRef.current;
+    const refs = cardRefs.current;
+    if (!container || !refs) return;
+
+    const cRect = container.getBoundingClientRect();
+    setSize({ w: container.scrollWidth, h: container.scrollHeight });
+
+    const connections = buildConnections();
+    const finalNumber = FINAL_NUM;
+
+    const newPaths: string[] = [];
+    for (const { parent, childA, childB } of connections) {
+      const pEl = refs.get(parent);
+      const aEl = refs.get(childA);
+      const bEl = refs.get(childB);
+      if (!pEl || !aEl || !bEl) continue;
+
+      const p = pEl.getBoundingClientRect();
+      const a = aEl.getBoundingClientRect();
+      const b = bEl.getBoundingClientRect();
+
+      // Determine side: children are to the left of parent ? → left side; else right side.
+      // Exception: final's childA=LEFT.SF (left), childB=RIGHT.SF (right) — draw two separate side paths.
+      if (parent === finalNumber) {
+        // left SF → final
+        newPaths.push(
+          buildSidedPath(a, p, "left", cRect),
+          buildSidedPath(b, p, "right", cRect),
+        );
+        continue;
+      }
+
+      const childIsLeftOfParent = a.right < p.left;
+      const side: "left" | "right" = childIsLeftOfParent ? "left" : "right";
+      newPaths.push(
+        buildPairPath(a, b, p, side, cRect),
+      );
+    }
+    setPaths(newPaths);
+  };
+
+  useLayoutEffect(() => {
+    recompute();
+    const container = containerRef.current;
+    if (!container) return;
+
+    const ro = new ResizeObserver(() => recompute());
+    ro.observe(container);
+    for (const el of cardRefs.current.values()) ro.observe(el);
+
+    const onScroll = () => recompute();
+    container.addEventListener("scroll", onScroll);
+    window.addEventListener("resize", onScroll);
+
+    return () => {
+      ro.disconnect();
+      container.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+    };
+
+  }, []);
+
+  if (size.w === 0 || size.h === 0) return null;
+
+  return (
+    <svg
+      aria-hidden
+      className="pointer-events-none absolute inset-0 h-full w-full"
+      style={{ zIndex: 0 }}
+      width={size.w}
+      height={size.h}
+      viewBox={`0 0 ${size.w} ${size.h}`}
+      preserveAspectRatio="none"
+    >
+      {paths.map((d, i) => (
+        <path
+          key={i}
+          d={d}
+          fill="none"
+          stroke="oklch(0.74 0.18 162 / 0.35)"
+          strokeWidth={1.5}
+          strokeLinecap="round"
+        />
+      ))}
+    </svg>
+  );
+}
+
+// Draws two children → parent connector on one side (left or right).
+function buildPairPath(
+  a: DOMRect,
+  b: DOMRect,
+  parent: DOMRect,
+  side: "left" | "right",
+  container: DOMRect,
+): string {
+  const ox = -container.left + window.scrollX;
+  const oy = -container.top + window.scrollY;
+
+  const aCy = a.top + a.height / 2 + oy;
+  const bCy = b.top + b.height / 2 + oy;
+  const pCy = parent.top + parent.height / 2 + oy;
+
+  if (side === "left") {
+    // children have right edge < parent.left
+    const childExitX = Math.max(a.right, b.right) + ox;
+    const parentEntryX = parent.left + ox;
+    const midX = (childExitX + parentEntryX) / 2;
+    return [
+      `M ${a.right + ox} ${aCy}`,
+      `H ${midX}`,
+      `V ${bCy}`,
+      `M ${b.right + ox} ${bCy}`,
+      `H ${midX}`,
+      `V ${pCy}`,
+      `H ${parentEntryX}`,
+    ].join(" ");
+  } else {
+    const childExitX = Math.min(a.left, b.left) + ox;
+    const parentEntryX = parent.right + ox;
+    const midX = (childExitX + parentEntryX) / 2;
+    return [
+      `M ${a.left + ox} ${aCy}`,
+      `H ${midX}`,
+      `V ${bCy}`,
+      `M ${b.left + ox} ${bCy}`,
+      `H ${midX}`,
+      `V ${pCy}`,
+      `H ${parentEntryX}`,
+    ].join(" ");
+  }
+}
+
+// Single connector (used for SF → Final on each side).
+function buildSidedPath(
+  child: DOMRect,
+  parent: DOMRect,
+  side: "left" | "right",
+  container: DOMRect,
+): string {
+  const ox = -container.left + window.scrollX;
+  const oy = -container.top + window.scrollY;
+  const cCy = child.top + child.height / 2 + oy;
+  const pCy = parent.top + parent.height / 2 + oy;
+
+  if (side === "left") {
+    const startX = child.right + ox;
+    const endX = parent.left + ox;
+    const midX = (startX + endX) / 2;
+    return `M ${startX} ${cCy} H ${midX} V ${pCy} H ${endX}`;
+  } else {
+    const startX = child.left + ox;
+    const endX = parent.right + ox;
+    const midX = (startX + endX) / 2;
+    return `M ${startX} ${cCy} H ${midX} V ${pCy} H ${endX}`;
+  }
+}
+
+// ============================================================
+// MOBILE LAYOUT (stacked per stage)
+// ============================================================
+
+const MOBILE_STAGES: { label: string; icon: React.ReactNode; numbers: number[] }[] = [
+  {
+    label: "Dieciseisavos",
+    icon: <Swords className="size-3.5" />,
+    numbers: [...LEFT.R32, ...RIGHT.R32],
+  },
+  {
+    label: "Octavos",
+    icon: <Swords className="size-3.5" />,
+    numbers: [...LEFT.R16, ...RIGHT.R16],
+  },
+  {
+    label: "Cuartos",
+    icon: <Swords className="size-3.5" />,
+    numbers: [...LEFT.QF, ...RIGHT.QF],
+  },
+  {
+    label: "Semifinales",
+    icon: <Swords className="size-3.5" />,
+    numbers: [...LEFT.SF, ...RIGHT.SF],
+  },
+  {
+    label: "Tercer puesto",
+    icon: <Medal className="size-3.5" />,
+    numbers: [103],
+  },
+  {
+    label: "Final",
+    icon: <Trophy className="size-3.5" />,
+    numbers: [FINAL_NUM],
+  },
+];
+
+function MobileBracket({
+  cardProps,
+  rowByNumber,
+  champion,
+}: {
+  cardProps: (row: BracketRow) => CardProps;
+  rowByNumber: Map<number, BracketRow>;
+  champion: TeamLite | null;
+}) {
+  const [activeStage, setActiveStage] = useState(0);
+  const stage = MOBILE_STAGES[activeStage];
+
+  const stageRows = stage.numbers
+    .map((n) => rowByNumber.get(n))
+    .filter(Boolean) as BracketRow[];
+
+  return (
+    <div className="lg:hidden">
+      {/* Stage tabs — horizontal scroll */}
+      <div
+        data-no-export
+        className="sticky top-14 z-10 -mx-4 mb-4 overflow-x-auto border-b border-border/40 bg-background/90 px-4 py-2 backdrop-blur"
+      >
+        <div className="flex gap-1.5">
+          {MOBILE_STAGES.map((s, idx) => (
+            <button
+              key={s.label}
+              type="button"
+              onClick={() => setActiveStage(idx)}
+              className={cn(
+                "flex flex-none items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                idx === activeStage
+                  ? "border-primary/60 bg-primary/10 text-primary"
+                  : "border-border/60 bg-card/60 text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {s.icon}
+              {s.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-1.5 px-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+        {stage.icon}
+        <span>{stage.label}</span>
+      </div>
+
+      <ul className="flex flex-col gap-3">
+        {stageRows.map((r) => (
+          <li key={r.id}>
+            <MatchCard
+              {...cardProps(r)}
+              variant={
+                r.matchNumber === FINAL_NUM ? "final" : r.stage === "TP" ? "third" : undefined
+              }
+            />
+          </li>
+        ))}
+      </ul>
+
+      {stage.numbers.includes(FINAL_NUM) && champion && (
+        <div className="mt-3 flex justify-center">
+          <ChampionBanner champion={champion} />
+        </div>
+      )}
+
+      {/* When exporting, include all stages regardless of active tab */}
+    </div>
+  );
+}
+
+// ============================================================
+// MATCH CARD (shared)
+// ============================================================
+
+type CardProps = {
+  row: BracketRow;
+  field: FieldState;
+  live: { home: TeamLite | null; away: TeamLite | null };
+  onChange: (id: number, key: keyof FieldState, value: string) => void;
+  prefs: DatePrefs;
+};
 
 function MatchCard({
   row,
@@ -339,7 +827,7 @@ function MatchCard({
   return (
     <div
       className={cn(
-        "group relative overflow-hidden rounded-lg border bg-card/80 backdrop-blur transition-colors",
+        "group relative overflow-hidden rounded-lg border bg-card/90 backdrop-blur transition-colors",
         variant === "final"
           ? "border-primary/40 shadow-[0_0_32px_-8px_oklch(0.74_0.18_162/0.5)]"
           : "border-border/60 hover:border-primary/30",
@@ -381,14 +869,12 @@ function MatchCard({
       {live.home && live.away && canEdit && isTie && (
         <div className="border-t border-[color:var(--accent)]/40 bg-accent/10 px-2 py-1">
           <label className="flex items-center justify-between gap-1.5 text-[10px] font-medium text-accent-foreground/80">
-            <span className="truncate uppercase tracking-wider">
-              Empate → ganador
-            </span>
+            <span className="truncate uppercase tracking-wider">Empate → ganador</span>
             <select
               name={`match-${row.id}-winner`}
               value={field.winner}
               onChange={(e) => onChange(row.id, "winner", e.target.value)}
-              className="h-6 max-w-[96px] flex-1 rounded border border-border/60 bg-background px-1.5 text-[11px] text-foreground"
+              className="h-6 max-w-[110px] flex-1 rounded border border-border/60 bg-background px-1.5 text-[11px] text-foreground"
             >
               <option value="">—</option>
               <option value={live.home.id}>{live.home.code}</option>
@@ -409,7 +895,6 @@ function MatchCard({
         </div>
       ) : null}
 
-      {/* Intentional to keep form layout stable even when we swap sides */}
       {side && side === "right" ? null : null}
     </div>
   );
@@ -484,37 +969,9 @@ function TeamRow({
   );
 }
 
-/**
- * Little celebration block shown under the Final card — displays the live
- * predicted champion as the user types.
- */
-function ChampionBanner({
-  row,
-  live,
-  field,
-}: {
-  row: BracketRow;
-  live: { home: TeamLite | null; away: TeamLite | null };
-  field: FieldState;
-}) {
-  const homeNum = field.home === "" ? null : Number(field.home);
-  const awayNum = field.away === "" ? null : Number(field.away);
-
-  let champion: TeamLite | null = null;
-  if (live.home && live.away && homeNum !== null && awayNum !== null) {
-    if (homeNum > awayNum) champion = live.home;
-    else if (homeNum < awayNum) champion = live.away;
-    else {
-      const wId = field.winner === "" ? null : Number(field.winner);
-      if (wId === live.home.id) champion = live.home;
-      else if (wId === live.away.id) champion = live.away;
-    }
-  }
-
-  if (!champion) return null;
-
+function ChampionBanner({ champion }: { champion: TeamLite }) {
   return (
-    <div className="mt-1 flex items-center gap-2 rounded-md border border-[color:var(--gold)]/40 bg-[color:var(--gold)]/10 px-3 py-2">
+    <div className="flex items-center gap-2 rounded-md border border-[color:var(--gold)]/40 bg-[color:var(--gold)]/10 px-3 py-2">
       <Trophy className="size-4 text-[color:var(--gold)]" />
       <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[color:var(--gold)]">
         Tu campeón

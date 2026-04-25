@@ -6,9 +6,7 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
 }
 
 // ============================================================
@@ -36,6 +34,39 @@ model User {
   specialPrediction SpecialPrediction?
   accounts          Account[]
   sessions          Session[]
+  ownedLeagues      League[]          @relation("LeagueOwner")
+  leagueMemberships LeagueMember[]
+}
+
+// ============================================================
+// PRIVATE LEAGUES
+// ============================================================
+
+model League {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  code      String   @unique // short invite code (e.g. "FAM-7K9X")
+  ownerId   String
+  owner     User     @relation("LeagueOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members LeagueMember[]
+
+  @@index([ownerId])
+}
+
+model LeagueMember {
+  id       String @id @default(cuid())
+  leagueId String
+  league   League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt DateTime @default(now())
+
+  @@unique([leagueId, userId])
+  @@index([userId])
 }
 
 model Account {

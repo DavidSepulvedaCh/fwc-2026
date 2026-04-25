@@ -3,10 +3,12 @@ import {
   CalendarDays,
   History,
   LogOut,
+  Newspaper,
   Settings,
   Shield,
   Swords,
   Trophy,
+  Users,
 } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
 import { buttonVariants } from "@/components/ui/button";
@@ -22,9 +24,33 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { logoutAction } from "@/lib/actions/auth";
 import { Brand } from "@/components/brand";
+import { MobileNav, type MobileNavItem } from "@/components/mobile-nav";
 
 export async function Navbar() {
   const user = await getCurrentUser();
+
+  const publicItems: MobileNavItem[] = [
+    { href: "/fixtures", label: "Calendario", iconName: "CalendarDays" },
+    { href: "/noticias", label: "Noticias", iconName: "Newspaper" },
+    { href: "/historia", label: "Historia", iconName: "History" },
+  ];
+
+  const userItems: MobileNavItem[] = user
+    ? [
+        { href: "/predictions", label: "Predicciones", iconName: "Swords" },
+        { href: "/leagues", label: "Ligas", iconName: "Users" },
+        { href: "/ranking", label: "Ranking", iconName: "Trophy" },
+        ...(user.role === "ADMIN"
+          ? [{ href: "/admin", label: "Admin", iconName: "Shield" }]
+          : []),
+      ]
+    : [];
+
+  const mobileItems: MobileNavItem[] = [
+    ...publicItems,
+    ...userItems,
+    { href: "/settings", label: "Preferencias", iconName: "Settings" },
+  ];
 
   return (
     <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur">
@@ -39,11 +65,17 @@ export async function Navbar() {
           </span>
         </Link>
 
-        <nav className="flex items-center gap-1.5">
+        {/* Desktop nav */}
+        <nav className="hidden items-center gap-1.5 md:flex">
           <NavLink
             href="/fixtures"
             icon={<CalendarDays className="size-3.5" />}
             label="Calendario"
+          />
+          <NavLink
+            href="/noticias"
+            icon={<Newspaper className="size-3.5" />}
+            label="Noticias"
           />
           <NavLink
             href="/historia"
@@ -56,6 +88,11 @@ export async function Navbar() {
                 href="/predictions"
                 icon={<Swords className="size-3.5" />}
                 label="Predicciones"
+              />
+              <NavLink
+                href="/leagues"
+                icon={<Users className="size-3.5" />}
+                label="Ligas"
               />
               <NavLink
                 href="/ranking"
@@ -83,7 +120,7 @@ export async function Navbar() {
                 aria-label="Preferencias"
               >
                 <Settings className="size-3.5" />
-                <span className="hidden sm:inline">Preferencias</span>
+                <span>Preferencias</span>
               </Link>
               <Link
                 href="/login"
@@ -97,6 +134,25 @@ export async function Navbar() {
             </>
           )}
         </nav>
+
+        {/* Mobile nav */}
+        <div className="flex items-center gap-1 md:hidden">
+          {user ? (
+            <UserMenu
+              name={user.name ?? "Usuario"}
+              email={user.email ?? null}
+              image={user.image ?? null}
+            />
+          ) : (
+            <Link
+              href="/login"
+              className={buttonVariants({ variant: "ghost", size: "sm" })}
+            >
+              Entrar
+            </Link>
+          )}
+          <MobileNav items={mobileItems} authed={!!user} />
+        </div>
       </div>
     </header>
   );
