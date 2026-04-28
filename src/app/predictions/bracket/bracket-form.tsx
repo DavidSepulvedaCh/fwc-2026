@@ -361,7 +361,7 @@ function DesktopBracket({
   return (
     <div className="relative hidden lg:block">
       <div ref={containerRef} className="relative overflow-x-auto rounded-2xl border border-border/60 bg-card/40 p-6 backdrop-blur">
-        <div className="relative grid min-w-[1200px] grid-cols-[210px_210px_210px_210px_260px_210px_210px_210px_210px] gap-4">
+        <div className="relative grid min-h-[860px] grid-cols-[164px_176px_192px_204px_240px_204px_192px_176px_164px] gap-x-6 gap-y-4 xl:grid-cols-[176px_188px_204px_216px_260px_216px_204px_188px_176px] xl:gap-x-8">
           <BracketColumn
             side="left"
             title={STAGE_LABEL.R32}
@@ -467,7 +467,7 @@ function BracketColumn({
         <span>{title}</span>
         {side === "right" && <Swords className="size-3.5" />}
       </div>
-      <ul className="flex flex-1 flex-col justify-around gap-3">
+      <ul className="flex flex-1 flex-col justify-around gap-4">
         {items.map((c) => (
           <li key={c.row.id} ref={setCardRef(c.row.matchNumber)}>
             <MatchCard {...c} side={side} />
@@ -838,9 +838,9 @@ function MatchCard({
         <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-primary to-transparent" />
       )}
 
-      <div className="flex items-center justify-between border-b border-border/40 bg-background/30 px-2.5 py-1 text-[10px] text-muted-foreground">
+      <div className="flex items-center justify-between border-b border-border/40 bg-background/30 px-2 py-0.5 text-[9px] text-muted-foreground">
         <span className="font-mono font-semibold">#{row.matchNumber}</span>
-        <span>{dateLabel}</span>
+        <span className="truncate">{dateLabel}</span>
       </div>
 
       <div className="divide-y divide-border/40">
@@ -867,14 +867,14 @@ function MatchCard({
       </div>
 
       {live.home && live.away && canEdit && isTie && (
-        <div className="border-t border-[color:var(--accent)]/40 bg-accent/10 px-2 py-1">
-          <label className="flex items-center justify-between gap-1.5 text-[10px] font-medium text-accent-foreground/80">
-            <span className="truncate uppercase tracking-wider">Empate → ganador</span>
+        <div className="border-t border-[color:var(--accent)]/40 bg-accent/10 px-2 py-0.5">
+          <label className="flex items-center justify-between gap-1.5 text-[9px] font-medium text-accent-foreground/80">
+            <span className="truncate uppercase tracking-wider">Empate → gana</span>
             <select
               name={`match-${row.id}-winner`}
               value={field.winner}
               onChange={(e) => onChange(row.id, "winner", e.target.value)}
-              className="h-6 max-w-[110px] flex-1 rounded border border-border/60 bg-background px-1.5 text-[11px] text-foreground"
+              className="h-5 max-w-[88px] flex-1 rounded border border-border/60 bg-background px-1 text-[10px] text-foreground"
             >
               <option value="">—</option>
               <option value={live.home.id}>{live.home.code}</option>
@@ -885,13 +885,13 @@ function MatchCard({
       )}
 
       {row.actual ? (
-        <div className="border-t border-border/40 bg-primary/5 px-2.5 py-1 text-[10px] font-medium text-primary">
+        <div className="border-t border-border/40 bg-primary/5 px-2 py-0.5 text-[9px] font-medium uppercase tracking-wider text-primary">
           Resultado final
         </div>
       ) : row.locked ? (
-        <div className="flex items-center gap-1 border-t border-border/40 bg-muted/30 px-2.5 py-1 text-[10px] text-muted-foreground">
-          <Lock className="size-3" />
-          En curso o bloqueado
+        <div className="flex items-center gap-1 border-t border-border/40 bg-muted/30 px-2 py-0.5 text-[9px] uppercase tracking-wider text-muted-foreground">
+          <Lock className="size-2.5" />
+          Bloqueado
         </div>
       ) : null}
 
@@ -922,17 +922,17 @@ function TeamRow({
   return (
     <div
       className={cn(
-        "flex items-center justify-between gap-2 px-2 py-1.5 transition-colors",
+        "flex items-center justify-between gap-1.5 px-2 py-1 transition-colors",
         isWinner && "bg-primary/10",
       )}
     >
-      <div className="flex min-w-0 flex-1 items-center gap-2">
+      <div className="flex min-w-0 flex-1 items-center gap-1.5">
         {team ? (
           <>
             <Flag code={team.code} size="sm" />
             <span
               className={cn(
-                "truncate font-display text-sm font-semibold",
+                "truncate font-display text-[13px] font-semibold leading-none",
                 isWinner && "text-primary",
               )}
             >
@@ -941,8 +941,8 @@ function TeamRow({
           </>
         ) : (
           <>
-            <div className="h-4 w-6 rounded-[2px] border border-dashed border-border/50 bg-muted/30" />
-            <span className="truncate font-mono text-[11px] text-muted-foreground">
+            <div className="h-3.5 w-5 rounded-[2px] border border-dashed border-border/50 bg-muted/30" />
+            <span className="truncate font-mono text-[10px] text-muted-foreground">
               {placeholder ?? "TBD"}
             </span>
           </>
@@ -957,11 +957,11 @@ function TeamRow({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
-        className="h-7 w-10 text-center text-sm font-semibold tabular-nums"
+        className="h-6 w-9 px-0 text-center text-[13px] font-semibold tabular-nums"
         aria-label={`Goles ${team?.code ?? placeholder ?? ""}`}
       />
       {actualScore !== null && (
-        <span className="font-mono text-[10px] font-medium text-primary">
+        <span className="font-mono text-[9px] font-medium text-primary">
           ({actualScore})
         </span>
       )}

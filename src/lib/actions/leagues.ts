@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 
@@ -56,32 +57,48 @@ export async function createLeagueAction(
   const name = parsed.data;
 
   const baseSlug = slugify(name) || "liga";
-  let slug = baseSlug;
-  for (let i = 0; i < 8; i++) {
-    const exists = await prisma.league.findUnique({ where: { slug } });
-    if (!exists) break;
-    slug = `${baseSlug}-${Math.floor(Math.random() * 9999)}`;
+
+  // Race-safe creation: rely on unique constraints (slug, code) and retry
+  // with fresh suffixes if either collides. P2002 = Prisma unique constraint.
+  const MAX_ATTEMPTS = 10;
+  let createdSlug: string | null = null;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const slug =
+      attempt === 0
+        ? baseSlug
+        : `${baseSlug}-${Math.floor(Math.random() * 9999)}`;
+    const code = randomCode();
+    try {
+      const league = await prisma.league.create({
+        data: {
+          name,
+          slug,
+          code,
+          ownerId: user.id,
+          members: { create: { userId: user.id } },
+        },
+      });
+      createdSlug = league.slug;
+      break;
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === "P2002"
+      ) {
+        continue; // collision on slug or code, retry
+      }
+      throw err;
+    }
   }
 
-  let code = randomCode();
-  for (let i = 0; i < 8; i++) {
-    const exists = await prisma.league.findUnique({ where: { code } });
-    if (!exists) break;
-    code = randomCode();
+  if (!createdSlug) {
+    return {
+      error: "No pudimos crear la liga. Intenta con otro nombre.",
+    };
   }
-
-  const league = await prisma.league.create({
-    data: {
-      name,
-      slug,
-      code,
-      ownerId: user.id,
-      members: { create: { userId: user.id } },
-    },
-  });
 
   revalidatePath("/leagues");
-  redirect(`/leagues/${league.slug}`);
+  redirect(`/leagues/${createdSlug}`);
 }
 
 export async function joinLeagueAction(

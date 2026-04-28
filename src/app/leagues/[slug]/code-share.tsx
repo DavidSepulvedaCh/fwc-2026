@@ -9,13 +9,15 @@ import { Button } from "@/components/ui/button";
 export function LeagueCodeShare({
   leagueName,
   code,
+  siteUrl,
 }: {
   leagueName: string;
   code: string;
+  siteUrl: string;
 }) {
   const [copied, setCopied] = useState(false);
 
-  const inviteText = `Te invito a mi polla privada "${leagueName}" para el Mundial 2026.\n\nUsa el código: ${code}\n\nEntra en https://polla-mundial.vercel.app/leagues y pega el código para unirte.`;
+  const inviteText = `Te invito a mi polla privada "${leagueName}" para el Mundial 2026.\n\nUsa el código: ${code}\n\nEntra en ${siteUrl}/leagues y pega el código para unirte.`;
 
   const copy = async () => {
     try {

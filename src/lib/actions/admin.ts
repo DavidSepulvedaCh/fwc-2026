@@ -78,9 +78,25 @@ export async function saveMatchResult(
     },
   });
 
+  // Recompute scores so rankings reflect the new result immediately.
+  // If recompute fails, the match update still persists; admin can retry
+  // via the "Recalcular" button on /admin.
+  let recomputeWarning: string | undefined;
+  try {
+    await recomputeAllScores();
+  } catch (err) {
+    console.error("[saveMatchResult] recomputeAllScores failed", err);
+    recomputeWarning =
+      "Resultado guardado, pero falló el recálculo automático. Usa el botón 'Recalcular'.";
+  }
+
   revalidatePath("/admin/matches");
   revalidatePath("/predictions");
-  return { ok: true };
+  revalidatePath("/ranking");
+  revalidatePath("/leagues");
+  return recomputeWarning
+    ? { ok: true, message: recomputeWarning }
+    : { ok: true };
 }
 
 const advancementSchema = z.object({

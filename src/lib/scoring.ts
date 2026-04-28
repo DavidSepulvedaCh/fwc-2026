@@ -133,6 +133,7 @@ export async function recomputeAllScores(): Promise<RecomputeSummary> {
     }
     return set;
   };
+  const actualR32 = actualStageTeams("R32");
   const actualR16 = actualStageTeams("R16");
   const actualQF = actualStageTeams("QF");
   const actualSF = actualStageTeams("SF");
@@ -211,6 +212,7 @@ export async function recomputeAllScores(): Promise<RecomputeSummary> {
     };
 
     return {
+      r32: teamsForStage("R32"),
       r16: teamsForStage("R16"),
       qf: teamsForStage("QF"),
       sf: teamsForStage("SF"),
@@ -220,18 +222,9 @@ export async function recomputeAllScores(): Promise<RecomputeSummary> {
 
   // --- Special predictions points -------------------------------------------
 
-  const specialUpdates: Array<{ id: number; points: number }> = [];
-
-  // Build a lookup of userId → total prediction points so we can aggregate.
-  const perMatchPointsByUser = new Map<string, number>();
-  for (const u of predictionUpdates) {
-    const match = predictions.find((p) => p.id === u.id);
-    if (!match) continue;
-    perMatchPointsByUser.set(
-      match.userId,
-      (perMatchPointsByUser.get(match.userId) ?? 0) + u.points,
-    );
-  }
+  // Bonus per user. Persisted via upsert in the same transaction as the
+  // per-match updates so partial failures roll back cleanly.
+  const specialBonusByUser = new Map<string, number>();
 
   // Iterate over all users who have any prediction or special row.
   const userIds = new Set<string>([
@@ -244,6 +237,11 @@ export async function recomputeAllScores(): Promise<RecomputeSummary> {
     let bonus = 0;
 
     const predictedSets = predictedStageTeams(userId);
+    if (actualR32.size > 0) {
+      for (const id of predictedSets.r32) {
+        if (actualR32.has(id)) bonus += config.pointsAdvanceR32;
+      }
+    }
     if (actualR16.size > 0) {
       for (const id of predictedSets.r16) {
         if (actualR16.has(id)) bonus += config.pointsAdvanceR16;
@@ -282,15 +280,7 @@ export async function recomputeAllScores(): Promise<RecomputeSummary> {
     if (matchName(sp?.bestPlayerName, awards.bestPlayerName)) bonus += config.pointsBestPlayer;
     if (matchName(sp?.bestGoalkeeperName, awards.bestGoalkeeperName)) bonus += config.pointsBestGoalkeeper;
 
-    if (sp) specialUpdates.push({ id: sp.id, points: bonus });
-    else {
-      // create a SpecialPrediction row so the bonus is persisted
-      const created = await prisma.specialPrediction.create({
-        data: { userId, points: bonus, computedAt: new Date() },
-      });
-      // skip updating below since we just created it with the right value
-      specials.push(created as Specials);
-    }
+    specialBonusByUser.set(userId, bonus);
   }
 
   // --- Persist --------------------------------------------------------------
@@ -303,16 +293,17 @@ export async function recomputeAllScores(): Promise<RecomputeSummary> {
         data: { points: u.points, computedAt: now },
       }),
     ),
-    ...specialUpdates.map((u) =>
-      prisma.specialPrediction.update({
-        where: { id: u.id },
-        data: { points: u.points, computedAt: now },
+    ...[...specialBonusByUser.entries()].map(([userId, points]) =>
+      prisma.specialPrediction.upsert({
+        where: { userId },
+        create: { userId, points, computedAt: now },
+        update: { points, computedAt: now },
       }),
     ),
   ]);
 
   return {
     predictionsUpdated: predictionUpdates.length,
-    specialsUpdated: specialUpdates.length,
+    specialsUpdated: specialBonusByUser.size,
   };
 }

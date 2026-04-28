@@ -49,7 +49,7 @@ export async function saveGroupPredictions(
   // Only save rows where BOTH fields are non-empty — skip partial ones.
   const inputs: Array<{ matchId: number; homeScore: number; awayScore: number }> = [];
   for (const [matchId, row] of rows) {
-    if (!row.homeScore && !row.awayScore) continue; // empty row, ignore
+    if (!row.homeScore || !row.awayScore) continue; // partial row, ignore
     const parsed = predictionInputSchema.safeParse({
       matchId,
       homeScore: row.homeScore,
@@ -144,7 +144,8 @@ export async function saveKnockoutPredictions(
     winnerId: number | null;
   }> = [];
   for (const [matchId, row] of rows) {
-    if (!row.homeScore && !row.awayScore && !row.winnerId) continue;
+    // Knockout rows must have both scores; winnerId is only relevant on ties.
+    if (!row.homeScore || !row.awayScore) continue;
     const parsed = knockoutInputSchema.safeParse({
       matchId,
       homeScore: row.homeScore,

@@ -3,6 +3,7 @@ import { Geist, Geist_Mono, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { Navbar } from "@/components/navbar";
 import { Toaster } from "@/components/ui/sonner";
+import { getSiteUrl } from "@/lib/utils";
 
 const geistSans = Geist({
   variable: "--font-sans",
@@ -20,9 +21,7 @@ const spaceGrotesk = Space_Grotesk({
   weight: ["500", "600", "700"],
 });
 
-const siteUrl =
-  process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ??
-  "http://localhost:3000";
+const siteUrl = getSiteUrl();
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -56,12 +55,21 @@ export const metadata: Metadata = {
     title: "Polla Mundial 2026 · Predice el Mundial de Fútbol",
     description:
       "Predice los 104 partidos del Mundial 2026, arma tu bracket y compite con tus amigos.",
+    images: [
+      {
+        url: "/icon.png",
+        width: 512,
+        height: 512,
+        alt: "Polla Mundial 2026",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "Polla Mundial 2026",
     description:
       "Predice el Mundial 2026 y compite con tus amigos por el trofeo.",
+    images: ["/icon.png"],
   },
   robots: {
     index: true,

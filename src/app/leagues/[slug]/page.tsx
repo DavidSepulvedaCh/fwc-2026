@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Flag } from "@/components/flag";
-import { cn } from "@/lib/utils";
+import { cn, getSiteUrl } from "@/lib/utils";
 import { LeagueCodeShare } from "./code-share";
 import { LeagueAdminActions } from "./admin-actions";
 
@@ -130,7 +130,11 @@ export default async function LeagueDetailPage({
       </div>
 
       <div className="mb-6 grid gap-3 sm:grid-cols-2">
-        <LeagueCodeShare leagueName={league.name} code={league.code} />
+        <LeagueCodeShare
+          leagueName={league.name}
+          code={league.code}
+          siteUrl={getSiteUrl()}
+        />
         <LeagueAdminActions
           leagueId={league.id}
           isOwner={isOwner}

@@ -317,6 +317,7 @@ model ScoringConfig {
   pointsExactScore      Int @default(5)
   pointsCorrectWinner   Int @default(3)
   pointsCorrectGoalDiff Int @default(1)
+  pointsAdvanceR32      Int @default(1)
   pointsAdvanceR16      Int @default(2)
   pointsAdvanceQF       Int @default(3)
   pointsAdvanceSF       Int @default(5)
